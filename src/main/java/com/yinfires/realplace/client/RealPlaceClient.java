@@ -1,8 +1,15 @@
 package com.yinfires.realplace.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.yinfires.realplace.RealPlace;
 import com.yinfires.realplace.RealPlaceClientConfig;
 import com.yinfires.realplace.RealPlaceClientState;
@@ -12,20 +19,32 @@ import com.yinfires.realplace.network.PlaceRealObjectPayload;
 import com.yinfires.realplace.network.RealPlacePlacementModePayload;
 import com.yinfires.realplace.server.RealPlaceObject;
 import com.yinfires.realplace.server.RealPlaceShape;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -35,6 +54,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.block.BellBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.HalfTransparentBlock;
+import net.minecraft.world.level.block.StainedGlassPaneBlock;
 import net.minecraft.world.level.block.entity.BellBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -48,10 +70,13 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.system.MemoryStack;
 
 public final class RealPlaceClient {
     public static final KeyMapping PLACEMENT_MODE = new KeyMapping(
@@ -66,15 +91,36 @@ public final class RealPlaceClient {
             "key.categories.realplace");
 
     private static final ResourceLocation HINT_LAYER = ResourceLocation.fromNamespaceAndPath(RealPlace.MOD_ID, "placement_key_hints");
+    private static final int MAX_GLINT_MASK_CACHE_SIZE = 128;
+    private static final int MAX_GLINT_MASK_PIXELS = 1024;
+    private static final double FLAT_ITEM_MASK_FRONT_Z = 0.5D - 1.0D / 32.0D;
+    private static final double FLAT_ITEM_MASK_BACK_Z = 0.5D + 1.0D / 32.0D;
+    private static final Map<GlintMaskKey, FlatItemAlphaMask> GLINT_MASK_CACHE = new LinkedHashMap<>(MAX_GLINT_MASK_CACHE_SIZE, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<GlintMaskKey, FlatItemAlphaMask> eldest) {
+            return size() > MAX_GLINT_MASK_CACHE_SIZE;
+        }
+    };
 
     private RealPlaceClient() {
     }
 
     public static void registerModBus(IEventBus modEventBus) {
+        modEventBus.addListener(RealPlaceClient::clientSetup);
         modEventBus.addListener(RealPlaceClient::registerKeys);
         modEventBus.addListener(RealPlaceClient::registerGuiLayers);
         NeoForge.EVENT_BUS.addListener(RealPlaceClient::onClientTick);
         NeoForge.EVENT_BUS.addListener(RealPlaceClient::onRenderLevel);
+    }
+
+    private static void clientSetup(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> {
+            try {
+                Minecraft.getInstance().getMainRenderTarget().enableStencil();
+            } catch (RuntimeException exception) {
+                RealPlace.LOGGER.warn("Failed to enable stencil buffer for RealPlace flat item glint masking.", exception);
+            }
+        });
     }
 
     private static void registerKeys(RegisterKeyMappingsEvent event) {
@@ -241,7 +287,7 @@ public final class RealPlaceClient {
         bufferSource.endBatch();
     }
 
-    private static void renderObject(RenderLevelStageEvent event, MultiBufferSource bufferSource, RealPlaceObject object) {
+    private static void renderObject(RenderLevelStageEvent event, MultiBufferSource.BufferSource bufferSource, RealPlaceObject object) {
         if (RealPlaceArmorPreviewRenderer.render(event, bufferSource, object)) {
             return;
         }
@@ -258,54 +304,235 @@ public final class RealPlaceClient {
             event.getPoseStack().popPose();
             return;
         }
-        boolean suppressGlint = shouldSuppressFlatItemGlint(minecraft, object);
-        MultiBufferSource itemBufferSource = suppressGlint ? new NoGlintBufferSource(bufferSource) : bufferSource;
-        minecraft.getItemRenderer().renderStatic(object.stack(), displayContext(object.stack(), object.modelMode()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, event.getPoseStack(), itemBufferSource, minecraft.level, 0);
-        if (suppressGlint) {
-            renderClippedFlatItemGlint(event.getPoseStack(), bufferSource, object.shape());
+        FlatItemAlphaMask glintMask = flatItemGlintMask(minecraft, object);
+        if (glintMask != null && renderFlatItemWithStencilGlint(minecraft, event.getPoseStack(), bufferSource, object, glintMask)) {
+            event.getPoseStack().popPose();
+            return;
         }
+        minecraft.getItemRenderer().renderStatic(object.stack(), displayContext(object.stack(), object.modelMode()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, event.getPoseStack(), bufferSource, minecraft.level, 0);
         event.getPoseStack().popPose();
     }
 
-    private static boolean shouldSuppressFlatItemGlint(Minecraft minecraft, RealPlaceObject object) {
+    private static FlatItemAlphaMask flatItemGlintMask(Minecraft minecraft, RealPlaceObject object) {
         if (object.modelMode() != 0 || !object.stack().hasFoil() || minecraft.level == null) {
-            return false;
+            return null;
         }
         if (object.stack().is(Items.TRIDENT) || object.stack().is(Items.SPYGLASS)) {
+            return null;
+        }
+        BakedModel model = minecraft.getItemRenderer().getModel(object.stack(), minecraft.level, minecraft.player, 0);
+        if (model.isGui3d() || model.isCustomRenderer()) {
+            return null;
+        }
+        boolean directRenderType = true;
+        if (object.stack().getItem() instanceof BlockItem blockItem) {
+            Block block = blockItem.getBlock();
+            directRenderType = !(block instanceof HalfTransparentBlock) && !(block instanceof StainedGlassPaneBlock);
+        }
+        GlintMaskKey key = new GlintMaskKey(
+                BuiltInRegistries.ITEM.getKey(object.stack().getItem()),
+                object.stack().getComponentsPatch().hashCode(),
+                directRenderType,
+                System.identityHashCode(minecraft.getModelManager()));
+        synchronized (GLINT_MASK_CACHE) {
+            FlatItemAlphaMask cached = GLINT_MASK_CACHE.get(key);
+            if (cached != null) {
+                return cached.placeable() ? cached : null;
+            }
+        }
+        List<BakedModel> renderPasses = model.getRenderPasses(object.stack(), directRenderType);
+        FlatItemAlphaMask mask = createFlatItemAlphaMask(renderPasses.isEmpty() ? List.of(model) : renderPasses);
+        synchronized (GLINT_MASK_CACHE) {
+            GLINT_MASK_CACHE.put(key, mask);
+        }
+        return mask.placeable() ? mask : null;
+    }
+
+    private static boolean renderFlatItemWithStencilGlint(Minecraft minecraft, PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, RealPlaceObject object, FlatItemAlphaMask mask) {
+        RenderTarget renderTarget = minecraft.getMainRenderTarget();
+        if (!renderTarget.isStencilEnabled() || mask.sprites().isEmpty()) {
             return false;
         }
-        return !minecraft.getItemRenderer().getModel(object.stack(), minecraft.level, minecraft.player, 0).isGui3d();
+        ItemDisplayContext context = displayContext(object.stack(), object.modelMode());
+        minecraft.getItemRenderer().renderStatic(
+                object.stack(),
+                context,
+                LightTexture.FULL_BRIGHT,
+                OverlayTexture.NO_OVERLAY,
+                poseStack,
+                new FilteredGlintBufferSource(bufferSource, false),
+                minecraft.level,
+                0);
+        bufferSource.endBatch();
+
+        boolean stencilWasEnabled = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
+        boolean depthWasEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        boolean cullWasEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+        boolean[] colorMask = currentColorMask();
+        int depthFunc = GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
+        int stencilFunc = GL11.glGetInteger(GL11.GL_STENCIL_FUNC);
+        int stencilRef = GL11.glGetInteger(GL11.GL_STENCIL_REF);
+        int stencilValueMask = GL11.glGetInteger(GL11.GL_STENCIL_VALUE_MASK);
+        int stencilWriteMask = GL11.glGetInteger(GL11.GL_STENCIL_WRITEMASK);
+        int stencilFail = GL11.glGetInteger(GL11.GL_STENCIL_FAIL);
+        int stencilPassDepthFail = GL11.glGetInteger(GL11.GL_STENCIL_PASS_DEPTH_FAIL);
+        int stencilPassDepthPass = GL11.glGetInteger(GL11.GL_STENCIL_PASS_DEPTH_PASS);
+        GL11.glEnable(GL11.GL_STENCIL_TEST);
+        try {
+            RenderSystem.clearStencil(0);
+            RenderSystem.stencilMask(0xFF);
+            RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, false);
+            RenderSystem.stencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
+            RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+            RenderSystem.colorMask(false, false, false, false);
+            RenderSystem.depthMask(false);
+            RenderSystem.disableDepthTest();
+            RenderSystem.disableCull();
+            writeFlatItemGlintMask(poseStack, object.shape().modelTransform(), mask);
+
+            RenderSystem.colorMask(true, true, true, true);
+            RenderSystem.stencilMask(0x00);
+            RenderSystem.stencilFunc(GL11.GL_EQUAL, 1, 0xFF);
+            RenderSystem.stencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+            minecraft.getItemRenderer().renderStatic(
+                    object.stack(),
+                    context,
+                    LightTexture.FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY,
+                    poseStack,
+                    new FilteredGlintBufferSource(bufferSource, true),
+                    minecraft.level,
+                    0);
+            bufferSource.endBatch();
+        } finally {
+            RenderSystem.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+            RenderSystem.depthMask(depthMask);
+            RenderSystem.depthFunc(depthFunc);
+            if (depthWasEnabled) {
+                RenderSystem.enableDepthTest();
+            } else {
+                RenderSystem.disableDepthTest();
+            }
+            if (cullWasEnabled) {
+                RenderSystem.enableCull();
+            } else {
+                RenderSystem.disableCull();
+            }
+            RenderSystem.stencilMask(stencilWriteMask);
+            RenderSystem.stencilFunc(stencilFunc, stencilRef, stencilValueMask);
+            RenderSystem.stencilOp(stencilFail, stencilPassDepthFail, stencilPassDepthPass);
+            if (stencilWasEnabled) {
+                GL11.glEnable(GL11.GL_STENCIL_TEST);
+            } else {
+                GL11.glDisable(GL11.GL_STENCIL_TEST);
+            }
+        }
+        return true;
     }
 
-    private static void renderClippedFlatItemGlint(PoseStack poseStack, MultiBufferSource bufferSource, RealPlaceShape shape) {
-        if (!shape.placeable()) {
-            return;
+    private static boolean[] currentColorMask() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer buffer = stack.malloc(4);
+            GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, buffer);
+            return new boolean[]{
+                    buffer.get(0) != 0,
+                    buffer.get(1) != 0,
+                    buffer.get(2) != 0,
+                    buffer.get(3) != 0};
         }
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.glint());
+    }
+
+    private static void writeFlatItemGlintMask(PoseStack poseStack, RealPlaceShape.Transform transform, FlatItemAlphaMask mask) {
+        RenderSystem.setShader(GameRenderer::getPositionShader);
+        BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
         Matrix4f matrix = poseStack.last().pose();
-        for (RealPlaceShape.Box box : shape.boxes()) {
-            renderGlintBoxFace(consumer, matrix, shape, box, box.minZ(), false);
-            renderGlintBoxFace(consumer, matrix, shape, box, box.maxZ(), true);
+        for (SpriteAlphaMask spriteMask : mask.sprites()) {
+            for (int y = 0; y < spriteMask.height(); y++) {
+                int x = 0;
+                while (x < spriteMask.width()) {
+                    while (x < spriteMask.width() && !spriteMask.solid()[y][x]) {
+                        x++;
+                    }
+                    if (x >= spriteMask.width()) {
+                        break;
+                    }
+                    int startX = x;
+                    while (x < spriteMask.width() && spriteMask.solid()[y][x]) {
+                        x++;
+                    }
+                    double minX = (double)startX / (double)spriteMask.width();
+                    double maxX = (double)x / (double)spriteMask.width();
+                    double minY = 1.0D - (double)(y + 1) / (double)spriteMask.height();
+                    double maxY = 1.0D - (double)y / (double)spriteMask.height();
+                    addMaskRect(builder, matrix, transform, minX, minY, maxX, maxY, FLAT_ITEM_MASK_FRONT_Z);
+                    addMaskRect(builder, matrix, transform, minX, minY, maxX, maxY, FLAT_ITEM_MASK_BACK_Z);
+                }
+            }
+        }
+        var mesh = builder.build();
+        if (mesh != null) {
+            BufferUploader.drawWithShader(mesh);
         }
     }
 
-    private static void renderGlintBoxFace(VertexConsumer consumer, Matrix4f matrix, RealPlaceShape shape, RealPlaceShape.Box box, double z, boolean reverse) {
-        if (reverse) {
-            glintVertex(consumer, matrix, shape, box.minX(), box.minY(), z, box.minX(), box.minY());
-            glintVertex(consumer, matrix, shape, box.maxX(), box.minY(), z, box.maxX(), box.minY());
-            glintVertex(consumer, matrix, shape, box.maxX(), box.maxY(), z, box.maxX(), box.maxY());
-            glintVertex(consumer, matrix, shape, box.minX(), box.maxY(), z, box.minX(), box.maxY());
-        } else {
-            glintVertex(consumer, matrix, shape, box.minX(), box.maxY(), z, box.minX(), box.maxY());
-            glintVertex(consumer, matrix, shape, box.maxX(), box.maxY(), z, box.maxX(), box.maxY());
-            glintVertex(consumer, matrix, shape, box.maxX(), box.minY(), z, box.maxX(), box.minY());
-            glintVertex(consumer, matrix, shape, box.minX(), box.minY(), z, box.minX(), box.minY());
-        }
+    private static void addMaskRect(BufferBuilder builder, Matrix4f matrix, RealPlaceShape.Transform transform, double minX, double minY, double maxX, double maxY, double z) {
+        addMaskVertex(builder, matrix, transform, minX, minY, z);
+        addMaskVertex(builder, matrix, transform, maxX, minY, z);
+        addMaskVertex(builder, matrix, transform, maxX, maxY, z);
+        addMaskVertex(builder, matrix, transform, minX, maxY, z);
     }
 
-    private static void glintVertex(VertexConsumer consumer, Matrix4f matrix, RealPlaceShape shape, double x, double y, double z, double u, double v) {
-        Vec3 transformed = shape.modelTransform().apply(x, y, z);
-        consumer.addVertex(matrix, (float)transformed.x, (float)transformed.y, (float)transformed.z).setUv((float)(u + 0.5D), (float)(0.5D - v));
+    private static void addMaskVertex(BufferBuilder builder, Matrix4f matrix, RealPlaceShape.Transform transform, double x, double y, double z) {
+        Vec3 transformed = transform.apply(x, y, z);
+        builder.addVertex(matrix, (float)transformed.x, (float)transformed.y, (float)transformed.z);
+    }
+
+    private static FlatItemAlphaMask createFlatItemAlphaMask(List<BakedModel> models) {
+        Set<TextureAtlasSprite> sprites = new LinkedHashSet<>();
+        RandomSource random = RandomSource.create();
+        for (BakedModel model : models) {
+            for (Direction direction : Direction.values()) {
+                random.setSeed(42L);
+                for (BakedQuad quad : model.getQuads(null, direction, random)) {
+                    sprites.add(quad.getSprite());
+                }
+            }
+            random.setSeed(42L);
+            for (BakedQuad quad : model.getQuads(null, null, random)) {
+                sprites.add(quad.getSprite());
+            }
+        }
+        if (sprites.isEmpty()) {
+            for (BakedModel model : models) {
+                sprites.add(model.getParticleIcon());
+            }
+        }
+        List<SpriteAlphaMask> masks = new ArrayList<>();
+        int totalPixels = 0;
+        for (TextureAtlasSprite sprite : sprites) {
+            SpriteContents contents = sprite.contents();
+            int width = contents.width();
+            int height = contents.height();
+            boolean[][] solid = new boolean[height][width];
+            int solidPixels = 0;
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    if (!contents.isTransparent(0, x, y)) {
+                        solid[y][x] = true;
+                        solidPixels++;
+                    }
+                }
+            }
+            if (solidPixels > 0) {
+                totalPixels += solidPixels;
+                if (totalPixels > MAX_GLINT_MASK_PIXELS) {
+                    return FlatItemAlphaMask.UNPLACEABLE;
+                }
+                masks.add(new SpriteAlphaMask(sprite, width, height, solid));
+            }
+        }
+        return masks.isEmpty() ? FlatItemAlphaMask.UNPLACEABLE : new FlatItemAlphaMask(masks, true);
     }
 
     private static boolean renderBlockModelObject(Minecraft minecraft, PoseStack poseStack, MultiBufferSource bufferSource, RealPlaceObject object) {
@@ -575,17 +802,20 @@ public final class RealPlaceClient {
     public record ObjectHit(RealPlaceObject object, Vec3 location, Direction direction, double distance) {
     }
 
-    private static final class NoGlintBufferSource implements MultiBufferSource {
+    private static final class FilteredGlintBufferSource implements MultiBufferSource {
         private final MultiBufferSource delegate;
+        private final boolean glintOnly;
         private final VertexConsumer noop = new NoopVertexConsumer();
 
-        private NoGlintBufferSource(MultiBufferSource delegate) {
+        private FilteredGlintBufferSource(MultiBufferSource delegate, boolean glintOnly) {
             this.delegate = delegate;
+            this.glintOnly = glintOnly;
         }
 
         @Override
         public VertexConsumer getBuffer(RenderType renderType) {
-            return isGlint(renderType) ? noop : delegate.getBuffer(renderType);
+            boolean glint = isGlint(renderType);
+            return glint == glintOnly ? delegate.getBuffer(renderType) : noop;
         }
 
         private static boolean isGlint(RenderType renderType) {
@@ -627,5 +857,15 @@ public final class RealPlaceClient {
         @Override
         public void addVertex(float x, float y, float z, int color, float u, float v, int packedOverlay, int packedLight, float normalX, float normalY, float normalZ) {
         }
+    }
+
+    private record FlatItemAlphaMask(List<SpriteAlphaMask> sprites, boolean placeable) {
+        private static final FlatItemAlphaMask UNPLACEABLE = new FlatItemAlphaMask(List.of(), false);
+    }
+
+    private record SpriteAlphaMask(TextureAtlasSprite sprite, int width, int height, boolean[][] solid) {
+    }
+
+    private record GlintMaskKey(ResourceLocation itemId, int stackHash, boolean directRenderType, int modelManagerHash) {
     }
 }

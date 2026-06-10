@@ -7,7 +7,7 @@ issueTrackerURL="https://example.invalid/realplace"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="真实置物 (RealPlace)"
-description='''真实置物 / RealPlace: place item models as persistent physical world objects.'''
+description='''真实置物 / RealPlace: place held items into the world as real objects, adjust them in placement mode, and optionally show Jade tooltips.'''
 
 [[mixins]]
 config="realplace.mixins.json"

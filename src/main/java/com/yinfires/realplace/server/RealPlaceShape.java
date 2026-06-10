@@ -26,6 +26,7 @@ public record RealPlaceShape(List<Box> boxes, Transform modelTransform, boolean 
     private static final double SAT_EPSILON = 1.0E-8D;
     private static final double CONTACT_EPSILON = 1.0E-7D;
     private static final double SWEEP_STEP = 0.03125D;
+    private static final double PLACEMENT_SURFACE_EPSILON = 1.0E-4D;
     private static final double SEPARATION_EPSILON = 1.0E-5D;
     private static final int BINARY_SEARCH_STEPS = 8;
     private static final Box FALLBACK_ITEM_BOX = new Box(-0.3D, -0.06D, -0.3D, 0.3D, 0.06D, 0.3D);
@@ -251,7 +252,8 @@ public record RealPlaceShape(List<Box> boxes, Transform modelTransform, boolean 
         AABB boundsAtOrigin = bounds(Vec3.ZERO, yaw, pitch, scale);
         Direction.Axis axis = direction.getAxis();
         double side = direction.getAxisDirection() == Direction.AxisDirection.POSITIVE ? boundsAtOrigin.min(axis) : boundsAtOrigin.max(axis);
-        double coordinate = axis.choose(hitLocation.x, hitLocation.y, hitLocation.z) - side;
+        double coordinate = axis.choose(hitLocation.x, hitLocation.y, hitLocation.z) - side
+                + direction.getAxisDirection().getStep() * PLACEMENT_SURFACE_EPSILON;
         return switch (axis) {
             case X -> new Vec3(coordinate, hitLocation.y, hitLocation.z);
             case Y -> new Vec3(hitLocation.x, coordinate, hitLocation.z);
