@@ -98,11 +98,8 @@ public final class RealPlaceManager {
         if (object == null) {
             return null;
         }
-        RealPlaceObject lookedAt = raycast(player);
-        if (lookedAt == null || !lookedAt.id().equals(id)) {
-            return null;
-        }
-        if (!player.canInteractWithEntity(object.bounds(), 1.0D)) {
+        RaycastHit lookedAt = raycastHit(player);
+        if (lookedAt == null || !lookedAt.object().id().equals(id)) {
             return null;
         }
         ItemStack stack = object.stack().copy();

@@ -39,6 +39,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.HalfTransparentBlock;
 import net.minecraft.world.level.block.StainedGlassPaneBlock;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.ClientHooks;
@@ -97,8 +98,11 @@ public final class RealPlaceShapeBuilder {
         }
         ResolvedItemModel resolved = resolveRenderedModel(stack, modelMode, minecraft);
         RealPlaceShape shape;
-        if (stack.getItem() instanceof BlockItem blockItem && modelMode == 1) {
-            return blockShape(blockItem, resolved.renderModels()).withTransform(RealPlaceShape.Transform.renderIdentity());
+        if (stack.getItem() instanceof BlockItem && (modelMode == 1 || RealPlaceBlockModeModels.isBed(stack))) {
+            RealPlaceBlockModeModels.Model blockModeModel = RealPlaceBlockModeModels.resolve(stack);
+            if (!blockModeModel.fixedItemFallback()) {
+                return blockShape(blockModeModel, resolved.renderModels(), minecraft).withTransform(RealPlaceShape.Transform.renderIdentity());
+            }
         }
         if (resolved.customRenderer()) {
             shape = captureCustomRendererShape(stack, modelMode).withTransform(resolved.transform());
@@ -111,8 +115,6 @@ public final class RealPlaceShapeBuilder {
             if (!isUsableShape(shape)) {
                 shape = tridentInHandShape();
             }
-        } else if (stack.getItem() instanceof BlockItem && modelMode == 0) {
-            shape = pixelShape(resolved.renderModels());
         } else {
             shape = itemShape(resolved);
         }
@@ -121,7 +123,7 @@ public final class RealPlaceShapeBuilder {
 
     private static ResolvedItemModel resolveRenderedModel(ItemStack stack, int modelMode, Minecraft minecraft) {
         Level level = minecraft.level;
-        ItemDisplayContext context = displayContext(modelMode);
+        ItemDisplayContext context = displayContext(stack, modelMode);
         boolean groundLike = isGroundLikeContext(context);
         BakedModel model = minecraft.getItemRenderer().getModel(stack, level, minecraft.player, 0);
         if (groundLike) {
@@ -143,7 +145,7 @@ public final class RealPlaceShapeBuilder {
         try {
             IClientItemExtensions.of(stack).getCustomRenderer().renderByItem(
                     stack,
-                    displayContext(modelMode),
+                    displayContext(stack, modelMode),
                     new PoseStack(),
                     bufferSource,
                     0xF000F0,
@@ -154,8 +156,11 @@ public final class RealPlaceShapeBuilder {
         return capturedBoundsShape(bufferSource.bounds());
     }
 
-    private static ItemDisplayContext displayContext(int modelMode) {
+    private static ItemDisplayContext displayContext(ItemStack stack, int modelMode) {
         if (modelMode == 1) {
+            if (stack.getItem() instanceof BlockItem && RealPlaceBlockModeModels.useFixedItemFallback(stack)) {
+                return ItemDisplayContext.FIXED;
+            }
             return ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
         }
         if (modelMode == 2) {
@@ -347,20 +352,68 @@ public final class RealPlaceShapeBuilder {
         return new RealPlaceShape.Box(minX, minY, -GENERATED_THICKNESS * 0.5D, maxX, maxY, GENERATED_THICKNESS * 0.5D);
     }
 
-    private static RealPlaceShape blockShape(BlockItem blockItem, List<BakedModel> renderModels) {
-        VoxelShape voxelShape = blockItem.getBlock().defaultBlockState().getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO, CollisionContext.empty());
-        if (!voxelShape.isEmpty()) {
-            List<RealPlaceShape.Box> boxes = new ArrayList<>();
-            for (AABB box : voxelShape.toAabbs()) {
-                if (box.getXsize() >= 1.0E-4D && box.getYsize() >= 1.0E-4D && box.getZsize() >= 1.0E-4D) {
-                    boxes.add(RealPlaceShape.Box.from(box));
-                }
-            }
-            if (!boxes.isEmpty()) {
-                return new RealPlaceShape(boxes);
+    private static RealPlaceShape blockShape(RealPlaceBlockModeModels.Model blockModeModel, List<BakedModel> renderModels, Minecraft minecraft) {
+        List<RealPlaceShape.Box> boxes = new ArrayList<>();
+        for (RealPlaceBlockModeModels.Part part : blockModeModel.collisionParts()) {
+            int before = boxes.size();
+            VoxelShape voxelShape = part.state().getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO, CollisionContext.empty());
+            addVoxelBoxes(boxes, voxelShape, part.offset());
+            if (boxes.size() == before) {
+                BakedModel blockModel = minecraft.getBlockRenderer().getBlockModel(part.state());
+                addOffsetBoxes(boxes, geometryShape(blockModel, false), part.offset());
             }
         }
+        if (!boxes.isEmpty()) {
+            return boxesToShape(boxes);
+        }
         return geometryShape(renderModels, false);
+    }
+
+    private static void addVoxelBoxes(List<RealPlaceShape.Box> boxes, VoxelShape voxelShape, Vec3 offset) {
+        if (voxelShape.isEmpty()) {
+            return;
+        }
+        for (AABB box : voxelShape.toAabbs()) {
+            if (box.getXsize() >= 1.0E-4D && box.getYsize() >= 1.0E-4D && box.getZsize() >= 1.0E-4D) {
+                boxes.add(offsetBox(box, offset));
+            }
+        }
+    }
+
+    private static void addOffsetBoxes(List<RealPlaceShape.Box> boxes, RealPlaceShape shape, Vec3 offset) {
+        if (!shape.placeable()) {
+            return;
+        }
+        for (RealPlaceShape.Box box : shape.boxes()) {
+            boxes.add(new RealPlaceShape.Box(
+                    box.minX() + offset.x,
+                    box.minY() + offset.y,
+                    box.minZ() + offset.z,
+                    box.maxX() + offset.x,
+                    box.maxY() + offset.y,
+                    box.maxZ() + offset.z));
+        }
+    }
+
+    private static RealPlaceShape.Box offsetBox(AABB box, Vec3 offset) {
+        return new RealPlaceShape.Box(
+                box.minX + offset.x,
+                box.minY + offset.y,
+                box.minZ + offset.z,
+                box.maxX + offset.x,
+                box.maxY + offset.y,
+                box.maxZ + offset.z);
+    }
+
+    private static RealPlaceShape boxesToShape(List<RealPlaceShape.Box> boxes) {
+        if (boxes.size() <= RealPlaceShape.MAX_BOXES) {
+            return new RealPlaceShape(boxes);
+        }
+        AABB merged = null;
+        for (RealPlaceShape.Box box : boxes) {
+            merged = merged == null ? box.toAabb() : merged.minmax(box.toAabb());
+        }
+        return merged == null ? unsupportedModelShape() : RealPlaceShape.unplaceable(merged);
     }
 
     private static RealPlaceShape geometryShape(BakedModel model, boolean mergeToBounds) {

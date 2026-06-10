@@ -33,6 +33,8 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.BellBlock;
+import net.minecraft.world.level.block.entity.BellBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -260,15 +262,30 @@ public final class RealPlaceClient {
     }
 
     private static boolean renderBlockModelObject(Minecraft minecraft, PoseStack poseStack, MultiBufferSource bufferSource, RealPlaceObject object) {
-        if (object.modelMode() != 1 || !(object.stack().getItem() instanceof BlockItem blockItem)) {
+        if ((object.modelMode() != 1 && !(object.modelMode() == 0 && RealPlaceBlockModeModels.isBed(object.stack())))
+                || !(object.stack().getItem() instanceof BlockItem)) {
             return false;
         }
-        BlockState state = blockItem.getBlock().defaultBlockState();
-        poseStack.pushPose();
-        poseStack.translate(-0.5D, -0.5D, -0.5D);
-        minecraft.getBlockRenderer().renderSingleBlock(state, poseStack, bufferSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
-        poseStack.popPose();
+        RealPlaceBlockModeModels.Model model = RealPlaceBlockModeModels.resolve(object.stack());
+        if (model.fixedItemFallback() || model.renderParts().isEmpty()) {
+            return false;
+        }
+        for (RealPlaceBlockModeModels.Part part : model.renderParts()) {
+            poseStack.pushPose();
+            Vec3 offset = part.offset();
+            poseStack.translate(offset.x - 0.5D, offset.y - 0.5D, offset.z - 0.5D);
+            minecraft.getBlockRenderer().renderSingleBlock(part.state(), poseStack, bufferSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            renderSpecialBlockEntityPart(minecraft, poseStack, bufferSource, part.state());
+            poseStack.popPose();
+        }
         return true;
+    }
+
+    private static void renderSpecialBlockEntityPart(Minecraft minecraft, PoseStack poseStack, MultiBufferSource bufferSource, BlockState state) {
+        if (state.getBlock() instanceof BellBlock) {
+            BellBlockEntity bell = new BellBlockEntity(BlockPos.ZERO, state);
+            minecraft.getBlockEntityRenderDispatcher().renderItem(bell, poseStack, bufferSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+        }
     }
 
     private static void renderPreview(RenderLevelStageEvent event, MultiBufferSource.BufferSource bufferSource) {
@@ -349,6 +366,9 @@ public final class RealPlaceClient {
 
     private static ItemDisplayContext displayContext(ItemStack stack, int modelMode) {
         if (modelMode == 1) {
+            if (stack.getItem() instanceof BlockItem && RealPlaceBlockModeModels.useFixedItemFallback(stack)) {
+                return ItemDisplayContext.FIXED;
+            }
             return ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
         }
         if (modelMode == 2) {

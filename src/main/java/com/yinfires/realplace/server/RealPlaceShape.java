@@ -251,9 +251,7 @@ public record RealPlaceShape(List<Box> boxes, Transform modelTransform, boolean 
         AABB boundsAtOrigin = bounds(Vec3.ZERO, yaw, pitch, scale);
         Direction.Axis axis = direction.getAxis();
         double side = direction.getAxisDirection() == Direction.AxisDirection.POSITIVE ? boundsAtOrigin.min(axis) : boundsAtOrigin.max(axis);
-        double coordinate = axis.choose(hitLocation.x, hitLocation.y, hitLocation.z)
-                - side
-                + (direction.getAxisDirection() == Direction.AxisDirection.POSITIVE ? 0.001D : -0.001D);
+        double coordinate = axis.choose(hitLocation.x, hitLocation.y, hitLocation.z) - side;
         return switch (axis) {
             case X -> new Vec3(coordinate, hitLocation.y, hitLocation.z);
             case Y -> new Vec3(hitLocation.x, coordinate, hitLocation.z);

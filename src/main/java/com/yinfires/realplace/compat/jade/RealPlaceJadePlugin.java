@@ -12,7 +12,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import snownee.jade.api.Accessor;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.ITooltip;
@@ -36,7 +35,7 @@ public final class RealPlaceJadePlugin implements IWailaPlugin {
         });
     }
 
-    private static Accessor<?> createAccessor(IWailaClientRegistration registration, HitResult hitResult, Accessor<?> currentAccessor) {
+    private static Accessor<?> createAccessor(IWailaClientRegistration registration, net.minecraft.world.phys.HitResult hitResult, Accessor<?> currentAccessor) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || minecraft.player == null) {
             return currentAccessor;
@@ -44,12 +43,6 @@ public final class RealPlaceJadePlugin implements IWailaPlugin {
         RealPlaceClient.ObjectHit hit = RealPlaceClient.lookedAtObjectHit();
         if (hit == null) {
             return currentAccessor;
-        }
-        if (hitResult != null && hitResult.getType() != HitResult.Type.MISS) {
-            double jadeDistance = minecraft.player.getEyePosition().distanceToSqr(hitResult.getLocation());
-            if (jadeDistance + 1.0E-5D < hit.distance()) {
-                return currentAccessor;
-            }
         }
         CompoundTag serverData = new CompoundTag();
         serverData.putBoolean(SERVER_DATA_MARKER, true);
