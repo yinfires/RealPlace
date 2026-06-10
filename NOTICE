@@ -1,0 +1,17 @@
+真实置物
+版权所有 2026 yinfires
+作者：yinfires
+项目开始日期：2026年6月10日
+
+第三方集成：
+- Jade API
+  RealPlace 仅在编译期使用 Jade API 以提供可选兼容提示；发布包不内置 Jade。
+
+RealPlace
+Copyright 2026 yinfires
+Author: yinfires
+Project start date: June 10, 2026
+
+Third-party integrations:
+- Jade API
+  RealPlace uses the Jade API at compile time for optional compatibility tooltips; the distribution jar does not bundle Jade.

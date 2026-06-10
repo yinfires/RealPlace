@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "package": "com.yinfires.realplace.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "EntityMixin",
+    "ItemEntityMixin",
+    "ServerPlayerGameModeMixin"
+  ],
+  "client": [
+    "ClientEntityMixin",
+    "KeyboardHandlerMixin",
+    "LevelRendererMixin",
+    "MouseHandlerMixin",
+    "MultiPlayerGameModeMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "minVersion": "0.8"
+}

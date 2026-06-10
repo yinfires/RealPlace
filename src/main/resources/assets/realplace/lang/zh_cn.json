@@ -1,0 +1,11 @@
+{
+  "key.categories.realplace": "真实置物",
+  "key.realplace.placement_mode": "放置模式",
+  "key.realplace.switch_model": "切换模型",
+  "realplace.hint.horizontal_rotate": "水平旋转：鼠标滚轮",
+  "realplace.hint.vertical_rotate": "竖直旋转：Alt + 鼠标滚轮",
+  "realplace.hint.scale": "缩放：Ctrl + 鼠标滚轮",
+  "realplace.hint.switch_model": "切换模型：%s",
+  "realplace.hint.place": "放置：鼠标右键",
+  "realplace.jade.mod_name": "真实置物"
+}

@@ -1,0 +1,11 @@
+{
+  "key.categories.realplace": "RealPlace",
+  "key.realplace.placement_mode": "Placement Mode",
+  "key.realplace.switch_model": "Switch Model",
+  "realplace.hint.horizontal_rotate": "Horizontal Rotate: Mouse Wheel",
+  "realplace.hint.vertical_rotate": "Vertical Rotate: Alt + Mouse Wheel",
+  "realplace.hint.scale": "Scale: Ctrl + Mouse Wheel",
+  "realplace.hint.switch_model": "Switch Model: %s",
+  "realplace.hint.place": "Place: Right Mouse Button",
+  "realplace.jade.mod_name": "RealPlace"
+}
