@@ -32,6 +32,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.block.BellBlock;
 import net.minecraft.world.level.block.entity.BellBlockEntity;
@@ -257,8 +258,54 @@ public final class RealPlaceClient {
             event.getPoseStack().popPose();
             return;
         }
-        minecraft.getItemRenderer().renderStatic(object.stack(), displayContext(object.stack(), object.modelMode()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, event.getPoseStack(), bufferSource, minecraft.level, 0);
+        boolean suppressGlint = shouldSuppressFlatItemGlint(minecraft, object);
+        MultiBufferSource itemBufferSource = suppressGlint ? new NoGlintBufferSource(bufferSource) : bufferSource;
+        minecraft.getItemRenderer().renderStatic(object.stack(), displayContext(object.stack(), object.modelMode()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, event.getPoseStack(), itemBufferSource, minecraft.level, 0);
+        if (suppressGlint) {
+            renderClippedFlatItemGlint(event.getPoseStack(), bufferSource, object.shape());
+        }
         event.getPoseStack().popPose();
+    }
+
+    private static boolean shouldSuppressFlatItemGlint(Minecraft minecraft, RealPlaceObject object) {
+        if (object.modelMode() != 0 || !object.stack().hasFoil() || minecraft.level == null) {
+            return false;
+        }
+        if (object.stack().is(Items.TRIDENT) || object.stack().is(Items.SPYGLASS)) {
+            return false;
+        }
+        return !minecraft.getItemRenderer().getModel(object.stack(), minecraft.level, minecraft.player, 0).isGui3d();
+    }
+
+    private static void renderClippedFlatItemGlint(PoseStack poseStack, MultiBufferSource bufferSource, RealPlaceShape shape) {
+        if (!shape.placeable()) {
+            return;
+        }
+        VertexConsumer consumer = bufferSource.getBuffer(RenderType.glint());
+        Matrix4f matrix = poseStack.last().pose();
+        for (RealPlaceShape.Box box : shape.boxes()) {
+            renderGlintBoxFace(consumer, matrix, shape, box, box.minZ(), false);
+            renderGlintBoxFace(consumer, matrix, shape, box, box.maxZ(), true);
+        }
+    }
+
+    private static void renderGlintBoxFace(VertexConsumer consumer, Matrix4f matrix, RealPlaceShape shape, RealPlaceShape.Box box, double z, boolean reverse) {
+        if (reverse) {
+            glintVertex(consumer, matrix, shape, box.minX(), box.minY(), z, box.minX(), box.minY());
+            glintVertex(consumer, matrix, shape, box.maxX(), box.minY(), z, box.maxX(), box.minY());
+            glintVertex(consumer, matrix, shape, box.maxX(), box.maxY(), z, box.maxX(), box.maxY());
+            glintVertex(consumer, matrix, shape, box.minX(), box.maxY(), z, box.minX(), box.maxY());
+        } else {
+            glintVertex(consumer, matrix, shape, box.minX(), box.maxY(), z, box.minX(), box.maxY());
+            glintVertex(consumer, matrix, shape, box.maxX(), box.maxY(), z, box.maxX(), box.maxY());
+            glintVertex(consumer, matrix, shape, box.maxX(), box.minY(), z, box.maxX(), box.minY());
+            glintVertex(consumer, matrix, shape, box.minX(), box.minY(), z, box.minX(), box.minY());
+        }
+    }
+
+    private static void glintVertex(VertexConsumer consumer, Matrix4f matrix, RealPlaceShape shape, double x, double y, double z, double u, double v) {
+        Vec3 transformed = shape.modelTransform().apply(x, y, z);
+        consumer.addVertex(matrix, (float)transformed.x, (float)transformed.y, (float)transformed.z).setUv((float)(u + 0.5D), (float)(0.5D - v));
     }
 
     private static boolean renderBlockModelObject(Minecraft minecraft, PoseStack poseStack, MultiBufferSource bufferSource, RealPlaceObject object) {
@@ -526,5 +573,59 @@ public final class RealPlaceClient {
     }
 
     public record ObjectHit(RealPlaceObject object, Vec3 location, Direction direction, double distance) {
+    }
+
+    private static final class NoGlintBufferSource implements MultiBufferSource {
+        private final MultiBufferSource delegate;
+        private final VertexConsumer noop = new NoopVertexConsumer();
+
+        private NoGlintBufferSource(MultiBufferSource delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public VertexConsumer getBuffer(RenderType renderType) {
+            return isGlint(renderType) ? noop : delegate.getBuffer(renderType);
+        }
+
+        private static boolean isGlint(RenderType renderType) {
+            return renderType.toString().toLowerCase(java.util.Locale.ROOT).contains("glint");
+        }
+    }
+
+    private static final class NoopVertexConsumer implements VertexConsumer {
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float normalX, float normalY, float normalZ) {
+            return this;
+        }
+
+        @Override
+        public void addVertex(float x, float y, float z, int color, float u, float v, int packedOverlay, int packedLight, float normalX, float normalY, float normalZ) {
+        }
     }
 }
