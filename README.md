@@ -1,7 +1,7 @@
 # 真实置物 (RealPlace)
 
 ## 简介
-**真实置物**允许你把手中的物品直接放进世界，作为可见的真实置物来摆放。进入放置模式后，可以对预览物体进行水平旋转、竖直旋转、缩放，并在可用模型之间切换；已经放下的置物也可以重新拾取。
+**真实置物**允许你把手中的物品直接放进世界，作为可见的放置物来摆放。进入放置模式后，可以对预览物体进行水平旋转、竖直旋转、缩放，并在可用模型之间切换；已经放下的置物也可以重新拾取。
 
 安装了 Jade 时，悬浮查看真实置物会显示对应物品提示。
 
@@ -14,7 +14,7 @@
 - 提供可选 Jade 联动悬浮提示。
 
 ## Overview
-**RealPlace** lets you place the item in your hand directly into the world as a visible placed object. After entering placement mode, you can rotate the preview horizontally and vertically, scale it, and switch between available models. Objects that have already been placed can also be picked up again.
+**RealPlace** lets you place the item in your hand directly into the world as a placed object. After entering placement mode, you can rotate the preview horizontally and vertically, scale it, and switch between available models. Objects that have already been placed can also be picked up again.
 
 With Jade installed, hovering over a RealPlace object shows the corresponding item tooltip.
 
