@@ -28,7 +28,7 @@ public abstract class ClientEntityMixin {
             return;
         }
         var searchBox = self.getBoundingBox().expandTowards(movement).inflate(1.0E-4D);
-        List<RealPlaceObject> objects = RealPlaceEntityCollision.filter(RealPlaceClientState.objects(), searchBox);
+        List<RealPlaceObject> objects = RealPlaceClientState.query(searchBox);
         if (RealPlaceEntityCollision.intersects(searchBox, objects)) {
             noPhysics = false;
         }
@@ -42,7 +42,7 @@ public abstract class ClientEntityMixin {
         }
         Vec3 vanillaMovement = callbackInfo.getReturnValue();
         var searchBox = self.getBoundingBox().expandTowards(vanillaMovement).inflate(1.0E-4D);
-        List<RealPlaceObject> objects = RealPlaceEntityCollision.filter(RealPlaceClientState.objects(), searchBox);
+        List<RealPlaceObject> objects = RealPlaceClientState.query(searchBox);
         if (!objects.isEmpty()) {
             callbackInfo.setReturnValue(RealPlaceEntityCollision.collide(self.getBoundingBox(), vanillaMovement, objects));
         }

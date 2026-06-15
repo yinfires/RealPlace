@@ -1,6 +1,7 @@
 package com.yinfires.realplace.server;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -51,6 +52,18 @@ class RealPlaceShapePlacementTest {
     void sideFacePlacementStaysOutsideBlockAcrossRepresentativeAngles() {
         verifySideFace(Direction.EAST, new Vec3(1.0D, 0.5D, 0.5D), true);
         verifySideFace(Direction.WEST, new Vec3(0.0D, 0.5D, 0.5D), false);
+    }
+
+    @Test
+    void clipExactReturnsNearestBoxHit() {
+        RealPlaceShape shape = new RealPlaceShape(List.of(
+                new RealPlaceShape.Box(2.0D, -0.25D, -0.25D, 2.5D, 0.25D, 0.25D),
+                new RealPlaceShape.Box(0.5D, -0.25D, -0.25D, 1.0D, 0.25D, 0.25D)));
+
+        RealPlaceShape.ShapeHit hit = shape.clipExact(Vec3.ZERO, 0.0F, 0.0F, 1.0F, Vec3.ZERO, new Vec3(4.0D, 0.0D, 0.0D)).orElseThrow();
+
+        assertEquals(0.5D, hit.location().x, TOLERANCE);
+        assertEquals(Direction.WEST, hit.direction());
     }
 
     private static void verifySideFace(Direction direction, Vec3 hit, boolean positiveAxis) {

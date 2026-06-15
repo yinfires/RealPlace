@@ -1,6 +1,5 @@
 package com.yinfires.realplace.server;
 
-import com.yinfires.realplace.network.SyncRealObjectsPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.AABB;
@@ -45,7 +44,7 @@ public final class RealPlaceServerEvents {
             return;
         }
         if (event.player instanceof ServerPlayer player && player.tickCount % 40 == 0) {
-            RealPlaceManager.sync(player);
+            RealPlaceManager.syncIfChanged(player);
         }
     }
 

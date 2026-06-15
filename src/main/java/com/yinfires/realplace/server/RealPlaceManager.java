@@ -3,8 +3,11 @@ package com.yinfires.realplace.server;
 import com.yinfires.realplace.network.SyncRealObjectsPayload;
 import com.yinfires.realplace.RealPlaceItemTransforms;
 import com.yinfires.realplace.network.RealPlaceNetworking;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
@@ -21,8 +24,8 @@ import net.minecraft.world.phys.Vec3;
 
 public final class RealPlaceManager {
     private static final double SYNC_RADIUS = 96.0D;
-    private static final double SYNC_RADIUS_SQR = SYNC_RADIUS * SYNC_RADIUS;
     private static final Set<UUID> PLACEMENT_MODE_PLAYERS = new HashSet<>();
+    private static final Map<UUID, SyncState> SYNC_STATES = new HashMap<>();
 
     private RealPlaceManager() {
     }
@@ -36,10 +39,7 @@ public final class RealPlaceManager {
     }
 
     public static List<RealPlaceObject> nearby(ServerPlayer player) {
-        Vec3 center = player.position();
-        return RealPlaceSavedData.get(player.serverLevel()).all().stream()
-                .filter(object -> object.position().distanceToSqr(center) <= SYNC_RADIUS_SQR)
-                .toList();
+        return RealPlaceSavedData.get(player.serverLevel()).nearby(player.position(), SYNC_RADIUS);
     }
 
     public static boolean place(ServerPlayer player, InteractionHand hand, Vec3 position, float yaw, float pitch, float scale, int modelMode, ItemStack stack, RealPlaceShape shape) {
@@ -149,7 +149,8 @@ public final class RealPlaceManager {
         Vec3 nearestLocation = null;
         Direction nearestDirection = Direction.UP;
         double nearestDistance = Double.MAX_VALUE;
-        for (RealPlaceObject object : RealPlaceSavedData.get(level).all()) {
+        AABB searchBox = new AABB(start, end).inflate(1.0E-4D);
+        for (RealPlaceObject object : RealPlaceSavedData.get(level).query(searchBox)) {
             java.util.Optional<RealPlaceShape.ShapeHit> hit = object.shape().clipExact(object.position(), object.yaw(), object.pitch(), object.scale(), start, end);
             if (hit.isPresent()) {
                 double distance = hit.get().distance();
@@ -185,12 +186,22 @@ public final class RealPlaceManager {
 
     public static void sync(ServerLevel level) {
         for (ServerPlayer player : level.players()) {
-            sync(player);
+            syncIfChanged(player);
         }
     }
 
     public static void sync(ServerPlayer player) {
-        RealPlaceNetworking.sendToPlayer(player, new SyncRealObjectsPayload(nearby(player)));
+        sendSync(player, nearby(player));
+    }
+
+    public static void syncIfChanged(ServerPlayer player) {
+        RealPlaceSavedData data = RealPlaceSavedData.get(player.serverLevel());
+        List<RealPlaceObject> nearby = data.nearby(player.position(), SYNC_RADIUS);
+        SyncState previous = SYNC_STATES.get(player.getUUID());
+        if (previous != null && previous.matches(player, data.version(), nearby)) {
+            return;
+        }
+        sendSync(player, nearby);
     }
 
     public static void setPlacementMode(ServerPlayer player, boolean active) {
@@ -212,11 +223,54 @@ public final class RealPlaceManager {
 
     public static void clearPlacementMode(ServerPlayer player) {
         PLACEMENT_MODE_PLAYERS.remove(player.getUUID());
+        SYNC_STATES.remove(player.getUUID());
     }
 
     public record RaycastHit(RealPlaceObject object, Vec3 location, Direction direction, double distance) {
     }
 
     private record PreviewHit(Vec3 location, Direction direction, double distance) {
+    }
+
+    private static void sendSync(ServerPlayer player, List<RealPlaceObject> objects) {
+        SYNC_STATES.put(player.getUUID(), SyncState.capture(player, RealPlaceSavedData.get(player.serverLevel()).version(), objects));
+        RealPlaceNetworking.sendToPlayer(player, new SyncRealObjectsPayload(objects));
+    }
+
+    private record SyncState(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension, long dataVersion, int sectionX, int sectionY, int sectionZ, List<UUID> objectIds) {
+        private static SyncState capture(ServerPlayer player, long dataVersion, List<RealPlaceObject> objects) {
+            List<UUID> ids = new ArrayList<>(objects.size());
+            for (RealPlaceObject object : objects) {
+                ids.add(object.id());
+            }
+            return new SyncState(
+                    player.level().dimension(),
+                    dataVersion,
+                    sectionCoordinate(player.getX()),
+                    sectionCoordinate(player.getY()),
+                    sectionCoordinate(player.getZ()),
+                    List.copyOf(ids));
+        }
+
+        private boolean matches(ServerPlayer player, long currentDataVersion, List<RealPlaceObject> objects) {
+            if (dataVersion != currentDataVersion
+                    || !dimension.equals(player.level().dimension())
+                    || sectionX != sectionCoordinate(player.getX())
+                    || sectionY != sectionCoordinate(player.getY())
+                    || sectionZ != sectionCoordinate(player.getZ())
+                    || objectIds.size() != objects.size()) {
+                return false;
+            }
+            for (int i = 0; i < objects.size(); i++) {
+                if (!objectIds.get(i).equals(objects.get(i).id())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static int sectionCoordinate(double coordinate) {
+            return Math.floorDiv((int)Math.floor(coordinate), 16);
+        }
     }
 }

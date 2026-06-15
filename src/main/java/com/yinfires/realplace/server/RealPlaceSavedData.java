@@ -16,6 +16,8 @@ import net.minecraft.world.phys.AABB;
 public class RealPlaceSavedData extends SavedData {
     private static final String DATA_NAME = "realplace_objects";
     private final Map<UUID, RealPlaceObject> objects = new HashMap<>();
+    private final RealPlaceObjectIndex index = new RealPlaceObjectIndex();
+    private long version;
 
     public static RealPlaceSavedData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(RealPlaceSavedData::load, RealPlaceSavedData::new, DATA_NAME);
@@ -28,6 +30,7 @@ public class RealPlaceSavedData extends SavedData {
             CompoundTag child = list.getCompound(i);
             RealPlaceObject object = RealPlaceObject.fromTag(child);
             data.objects.put(object.id(), object);
+            data.index.add(object);
         }
         return data;
     }
@@ -41,7 +44,7 @@ public class RealPlaceSavedData extends SavedData {
     }
 
     public RealPlaceObject findAt(BlockPos pos) {
-        for (RealPlaceObject object : objects.values()) {
+        for (RealPlaceObject object : query(new AABB(pos).inflate(1.0E-4D))) {
             if (object.anchorPos().equals(pos)) {
                 return object;
             }
@@ -50,24 +53,34 @@ public class RealPlaceSavedData extends SavedData {
     }
 
     public void put(RealPlaceObject object) {
-        objects.put(object.id(), object);
+        RealPlaceObject previous = objects.put(object.id(), object);
+        if (previous != null) {
+            index.remove(previous);
+        }
+        index.add(object);
+        version++;
         setDirty();
     }
 
     public void remove(UUID id) {
-        if (objects.remove(id) != null) {
+        RealPlaceObject removed = objects.remove(id);
+        if (removed != null) {
+            index.remove(removed);
+            version++;
             setDirty();
         }
     }
 
     public List<RealPlaceObject> query(AABB box) {
-        List<RealPlaceObject> result = new ArrayList<>();
-        for (RealPlaceObject object : objects.values()) {
-            if (object.bounds().intersects(box)) {
-                result.add(object);
-            }
-        }
-        return result;
+        return index.query(box);
+    }
+
+    public List<RealPlaceObject> nearby(net.minecraft.world.phys.Vec3 center, double radius) {
+        return index.nearby(center, radius);
+    }
+
+    public long version() {
+        return version;
     }
 
     @Override

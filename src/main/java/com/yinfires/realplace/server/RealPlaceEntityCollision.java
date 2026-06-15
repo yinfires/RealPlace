@@ -67,9 +67,13 @@ public final class RealPlaceEntityCollision {
     }
 
     public static List<RealPlaceObject> filter(Collection<RealPlaceObject> objects, AABB searchBox) {
-        return objects.stream()
-                .filter(object -> object.shape().placeable() && object.bounds().intersects(searchBox))
-                .toList();
+        java.util.ArrayList<RealPlaceObject> result = new java.util.ArrayList<>();
+        for (RealPlaceObject object : objects) {
+            if (object.shape().placeable() && object.bounds().intersects(searchBox)) {
+                result.add(object);
+            }
+        }
+        return result;
     }
 
     private static double clipAxis(AABB entityBox, Direction.Axis axis, double movement, Collection<RealPlaceObject> objects) {

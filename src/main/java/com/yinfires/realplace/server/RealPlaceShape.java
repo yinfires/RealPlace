@@ -1,7 +1,6 @@
 package com.yinfires.realplace.server;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.core.Direction;
@@ -143,14 +142,22 @@ public record RealPlaceShape(List<Box> boxes, Transform modelTransform, boolean 
     public Optional<ShapeHit> clipExact(Vec3 position, float yaw, float pitch, float scale, Vec3 start, Vec3 end) {
         Vec3 localStart = inverseTransformPoint(start, position, yaw, pitch, scale);
         Vec3 localEnd = inverseTransformPoint(end, position, yaw, pitch, scale);
-        return boxes.stream()
-                .map(box -> box.toAabb().clip(localStart, localEnd).map(localHit -> {
-                    Vec3 worldHit = transformPoint(localHit.x, localHit.y, localHit.z, position, yaw, pitch, scale);
-                    Direction localFace = faceForHit(box.toAabb(), localHit);
-                    return new ShapeHit(worldHit, worldDirection(localFace, yaw, pitch), start.distanceToSqr(worldHit));
-                }))
-                .flatMap(Optional::stream)
-                .min(Comparator.comparingDouble(ShapeHit::distance));
+        ShapeHit nearest = null;
+        for (Box box : boxes) {
+            AABB aabb = box.toAabb();
+            Optional<Vec3> localHit = aabb.clip(localStart, localEnd);
+            if (localHit.isEmpty()) {
+                continue;
+            }
+            Vec3 hit = localHit.get();
+            Vec3 worldHit = transformPoint(hit.x, hit.y, hit.z, position, yaw, pitch, scale);
+            Direction localFace = faceForHit(aabb, hit);
+            ShapeHit shapeHit = new ShapeHit(worldHit, worldDirection(localFace, yaw, pitch), start.distanceToSqr(worldHit));
+            if (nearest == null || shapeHit.distance() < nearest.distance()) {
+                nearest = shapeHit;
+            }
+        }
+        return Optional.ofNullable(nearest);
     }
 
     public List<Line> outlineLines(Vec3 position, float yaw, float pitch, float scale) {
