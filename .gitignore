@@ -35,6 +35,7 @@ bin/
 .env
 .env.*
 local.properties
+/AGENTS.md
 doc/
 
 
