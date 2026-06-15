@@ -26,7 +26,7 @@ Each release should include:
 
 ---
 
-## 1.0.1-1.20.1forge - 2026-06-15
+## 1.0.0-1.20.1forge - 2026-06-15
 
 - Minecraft: 1.20.1
 - Mod Loader: Forge 47.4.20
