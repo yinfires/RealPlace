@@ -18,15 +18,15 @@ public class RealPlaceSavedData extends SavedData {
     private final Map<UUID, RealPlaceObject> objects = new HashMap<>();
 
     public static RealPlaceSavedData get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(new SavedData.Factory<>(RealPlaceSavedData::new, RealPlaceSavedData::load), DATA_NAME);
+        return level.getDataStorage().computeIfAbsent(RealPlaceSavedData::load, RealPlaceSavedData::new, DATA_NAME);
     }
 
-    public static RealPlaceSavedData load(CompoundTag tag, net.minecraft.core.HolderLookup.Provider provider) {
+    public static RealPlaceSavedData load(CompoundTag tag) {
         RealPlaceSavedData data = new RealPlaceSavedData();
         ListTag list = tag.getList("Objects", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
             CompoundTag child = list.getCompound(i);
-            RealPlaceObject object = RealPlaceObject.fromTag(child, provider);
+            RealPlaceObject object = RealPlaceObject.fromTag(child);
             data.objects.put(object.id(), object);
         }
         return data;
@@ -71,10 +71,10 @@ public class RealPlaceSavedData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag, net.minecraft.core.HolderLookup.Provider provider) {
+    public CompoundTag save(CompoundTag tag) {
         ListTag list = new ListTag();
         for (RealPlaceObject object : objects.values()) {
-            list.add(object.save(provider));
+            list.add(object.save());
         }
         tag.put("Objects", list);
         return tag;

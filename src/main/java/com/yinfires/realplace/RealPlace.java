@@ -4,13 +4,14 @@ import com.mojang.logging.LogUtils;
 import com.yinfires.realplace.client.RealPlaceClient;
 import com.yinfires.realplace.network.RealPlaceNetworking;
 import com.yinfires.realplace.server.RealPlaceServerEvents;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.fml.loading.FMLEnvironment;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 @Mod(RealPlace.MOD_ID)
@@ -18,9 +19,9 @@ public class RealPlace {
     public static final String MOD_ID = "realplace";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public RealPlace(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.CLIENT, RealPlaceClientConfig.SPEC, RealPlaceClientConfig.FILE_NAME);
-        modEventBus.addListener(RealPlaceNetworking::register);
+    public RealPlace() {
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, RealPlaceClientConfig.SPEC, RealPlaceClientConfig.FILE_NAME);
         if (FMLEnvironment.dist == Dist.CLIENT) {
             RealPlaceClient.registerModBus(modEventBus);
         }
@@ -29,6 +30,7 @@ public class RealPlace {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(RealPlaceNetworking::register);
         LOGGER.info("RealPlace initialized.");
     }
 }

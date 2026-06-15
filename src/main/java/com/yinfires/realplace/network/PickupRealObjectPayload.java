@@ -2,32 +2,32 @@ package com.yinfires.realplace.network;
 
 import com.yinfires.realplace.RealPlace;
 import com.yinfires.realplace.server.RealPlaceManager;
+import java.util.function.Supplier;
 import java.util.UUID;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraftforge.network.NetworkEvent;
 
-public record PickupRealObjectPayload(UUID id, InteractionHand hand) implements CustomPacketPayload {
-    public static final Type<PickupRealObjectPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(RealPlace.MOD_ID, "pickup_real_object"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, PickupRealObjectPayload> STREAM_CODEC = StreamCodec.of(
-            (buf, payload) -> {
-                buf.writeUUID(payload.id);
-                buf.writeEnum(payload.hand);
-            },
-            buf -> new PickupRealObjectPayload(buf.readUUID(), buf.readEnum(InteractionHand.class)));
+public record PickupRealObjectPayload(UUID id, InteractionHand hand) {
+    public static final ResourceLocation ID = new ResourceLocation(RealPlace.MOD_ID, "pickup_real_object");
 
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    public static void encode(PickupRealObjectPayload payload, FriendlyByteBuf buf) {
+        buf.writeUUID(payload.id);
+        buf.writeEnum(payload.hand);
     }
 
-    public static void handle(PickupRealObjectPayload payload, IPayloadContext context) {
-        if (context.player() instanceof ServerPlayer player) {
+    public static PickupRealObjectPayload decode(FriendlyByteBuf buf) {
+        return new PickupRealObjectPayload(buf.readUUID(), buf.readEnum(InteractionHand.class));
+    }
+
+    public static void handle(PickupRealObjectPayload payload, Supplier<NetworkEvent.Context> contextSupplier) {
+        NetworkEvent.Context context = contextSupplier.get();
+        ServerPlayer player = context.getSender();
+        if (player != null) {
             RealPlaceManager.pickup(player, payload.id, payload.hand);
         }
+        context.setPacketHandled(true);
     }
 }

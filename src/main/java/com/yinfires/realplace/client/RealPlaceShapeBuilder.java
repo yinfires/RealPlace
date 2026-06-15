@@ -42,8 +42,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import net.neoforged.neoforge.client.ClientHooks;
-import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
+import net.minecraftforge.client.ForgeHooksClient;
+import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 
 public final class RealPlaceShapeBuilder {
     private static final double PIXEL = 1.0D / 16.0D;
@@ -76,7 +76,7 @@ public final class RealPlaceShapeBuilder {
         int safeMode = RealPlaceItemTransforms.clampModelMode(stack, modelMode);
         CacheKey key = new CacheKey(
                 BuiltInRegistries.ITEM.getKey(stack.getItem()),
-                ItemStack.hashItemAndComponents(stack),
+                stackTagHash(stack),
                 safeMode,
                 System.identityHashCode(minecraft.getModelManager()));
         synchronized (SHAPE_CACHE) {
@@ -85,7 +85,9 @@ public final class RealPlaceShapeBuilder {
                 return cached;
             }
         }
-        RealPlaceShape shape = createUncached(stack.copyWithCount(1), safeMode, minecraft);
+        ItemStack stackCopy = stack.copy();
+        stackCopy.setCount(1);
+        RealPlaceShape shape = createUncached(stackCopy, safeMode, minecraft);
         synchronized (SHAPE_CACHE) {
             SHAPE_CACHE.put(key, shape);
         }
@@ -93,7 +95,7 @@ public final class RealPlaceShapeBuilder {
     }
 
     private static RealPlaceShape createUncached(ItemStack stack, int modelMode, Minecraft minecraft) {
-        if (modelMode == 2 && stack.getItem() instanceof ArmorItem armorItem && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
+        if (modelMode == 2 && stack.getItem() instanceof ArmorItem armorItem && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.ARMOR) {
             return armorShape(stack, minecraft);
         }
         ResolvedItemModel resolved = resolveRenderedModel(stack, modelMode, minecraft);
@@ -128,13 +130,13 @@ public final class RealPlaceShapeBuilder {
         BakedModel model = minecraft.getItemRenderer().getModel(stack, level, minecraft.player, 0);
         if (groundLike) {
             if (stack.is(Items.TRIDENT)) {
-                model = minecraft.getModelManager().getModel(ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("trident")));
+                model = minecraft.getModelManager().getModel(new ModelResourceLocation(new ResourceLocation("minecraft", "trident"), "inventory"));
             } else if (stack.is(Items.SPYGLASS)) {
-                model = minecraft.getModelManager().getModel(ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("spyglass")));
+                model = minecraft.getModelManager().getModel(new ModelResourceLocation(new ResourceLocation("minecraft", "spyglass"), "inventory"));
             }
         }
         PoseStack poseStack = new PoseStack();
-        model = ClientHooks.handleCameraTransforms(poseStack, model, context, false);
+        model = ForgeHooksClient.handleCameraTransforms(poseStack, model, context, false);
         boolean customRenderer = model.isCustomRenderer() || stack.is(Items.TRIDENT) && !groundLike;
         List<BakedModel> renderModels = customRenderer ? List.of(model) : renderPassModels(stack, context, model);
         return new ResolvedItemModel(model, renderModels, RealPlaceShape.Transform.fromRenderMatrix(poseStack.last().pose()), customRenderer);
@@ -174,13 +176,7 @@ public final class RealPlaceShapeBuilder {
     }
 
     private static List<BakedModel> renderPassModels(ItemStack stack, ItemDisplayContext context, BakedModel model) {
-        boolean directRenderType = true;
-        if (context != ItemDisplayContext.GUI && !context.firstPerson() && stack.getItem() instanceof BlockItem blockItem) {
-            Block block = blockItem.getBlock();
-            directRenderType = !(block instanceof HalfTransparentBlock) && !(block instanceof StainedGlassPaneBlock);
-        }
-        List<BakedModel> passes = model.getRenderPasses(stack, directRenderType);
-        return passes.isEmpty() ? List.of(model) : passes;
+        return List.of(model);
     }
 
     private static RealPlaceShape itemShape(ResolvedItemModel resolved) {
@@ -721,7 +717,7 @@ public final class RealPlaceShapeBuilder {
         stand.setInvisible(true);
         stand.setNoGravity(true);
         for (EquipmentSlot slot : EquipmentSlot.values()) {
-            if (slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
+            if (slot.getType() == EquipmentSlot.Type.ARMOR) {
                 stand.setItemSlot(slot, ItemStack.EMPTY);
             }
         }
@@ -791,6 +787,10 @@ public final class RealPlaceShapeBuilder {
         return new RealPlaceShape(boxes, shape.modelTransform(), shape.placeable());
     }
 
+    private static int stackTagHash(ItemStack stack) {
+        return stack.getTag() == null ? 0 : stack.getTag().hashCode();
+    }
+
     private record ResolvedItemModel(BakedModel model, List<BakedModel> renderModels, RealPlaceShape.Transform transform, boolean customRenderer) {
     }
 
@@ -815,7 +815,7 @@ public final class RealPlaceShapeBuilder {
         private int vertices;
 
         @Override
-        public VertexConsumer addVertex(float x, float y, float z) {
+        public VertexConsumer vertex(double x, double y, double z) {
             int base = vertices * 3;
             quad[base] = x;
             quad[base + 1] = y;
@@ -829,33 +829,40 @@ public final class RealPlaceShapeBuilder {
         }
 
         @Override
-        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+        public VertexConsumer color(int red, int green, int blue, int alpha) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv(float u, float v) {
+        public VertexConsumer uv(float u, float v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv1(int u, int v) {
+        public VertexConsumer overlayCoords(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv2(int u, int v) {
+        public VertexConsumer uv2(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setNormal(float normalX, float normalY, float normalZ) {
+        public VertexConsumer normal(float normalX, float normalY, float normalZ) {
             return this;
         }
 
         @Override
-        public void addVertex(float x, float y, float z, int color, float u, float v, int packedOverlay, int packedLight, float normalX, float normalY, float normalZ) {
-            addVertex(x, y, z);
+        public void defaultColor(int red, int green, int blue, int alpha) {
+        }
+
+        @Override
+        public void unsetDefaultColor() {
+        }
+
+        @Override
+        public void endVertex() {
         }
 
         private void addQuadBounds() {
@@ -884,37 +891,45 @@ public final class RealPlaceShapeBuilder {
 
     private static final class NoopVertexConsumer implements VertexConsumer {
         @Override
-        public VertexConsumer addVertex(float x, float y, float z) {
+        public VertexConsumer vertex(double x, double y, double z) {
             return this;
         }
 
         @Override
-        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+        public VertexConsumer color(int red, int green, int blue, int alpha) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv(float u, float v) {
+        public VertexConsumer uv(float u, float v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv1(int u, int v) {
+        public VertexConsumer overlayCoords(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv2(int u, int v) {
+        public VertexConsumer uv2(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setNormal(float normalX, float normalY, float normalZ) {
+        public VertexConsumer normal(float normalX, float normalY, float normalZ) {
             return this;
         }
 
         @Override
-        public void addVertex(float x, float y, float z, int color, float u, float v, int packedOverlay, int packedLight, float normalX, float normalY, float normalZ) {
+        public void defaultColor(int red, int green, int blue, int alpha) {
+        }
+
+        @Override
+        public void unsetDefaultColor() {
+        }
+
+        @Override
+        public void endVertex() {
         }
     }
 

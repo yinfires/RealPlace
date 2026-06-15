@@ -1,12 +1,11 @@
 package com.yinfires.realplace;
 
-import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.CustomData;
 
 public final class RealPlaceItemTransforms {
     private static final String TAG_KEY = "RealPlace";
@@ -18,7 +17,13 @@ public final class RealPlaceItemTransforms {
         if (stack.isEmpty()) {
             return;
         }
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.remove(TAG_KEY));
+        CompoundTag tag = stack.getTag();
+        if (tag != null) {
+            tag.remove(TAG_KEY);
+            if (tag.isEmpty()) {
+                stack.setTag(null);
+            }
+        }
     }
 
     public static float clampScale(float scale) {
@@ -69,6 +74,6 @@ public final class RealPlaceItemTransforms {
 
     private static boolean isHumanoidArmor(ItemStack stack) {
         return stack.getItem() instanceof ArmorItem armorItem
-                && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.HUMANOID_ARMOR;
+                && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.ARMOR;
     }
 }

@@ -26,6 +26,37 @@ Each release should include:
 
 ---
 
+## 1.0.1-1.20.1forge - 2026-06-15
+
+- Minecraft: 1.20.1
+- Mod Loader: Forge 47.4.20
+- License: Apache-2.0
+- Release Type: Port release
+
+### 中文更新日志
+
+#### 调整内容
+
+- 移植到 Minecraft 1.20.1 Forge，并使用带版本后缀的打包版本号。
+- 调整构建配置，使该版本分支可以单独调整版本号并单独打包。
+
+#### 兼容性
+
+- 保持 Jade 可选联动；RealPlace 仅在编译期使用 Jade API，发布包不内置 Jade。
+
+### English Changelog
+
+#### Changed
+
+- Ported to Minecraft 1.20.1 Forge and adopted package versions with a version-specific suffix.
+- Adjusted the build configuration so this version branch can bump versions and package independently.
+
+#### Compatibility
+
+- Kept Jade optional compatibility; RealPlace uses the Jade API only at compile time and does not bundle Jade in distribution jars.
+
+---
+
 ## 1.0.0 - 2026-06-10
 
 - Minecraft: 1.21.1

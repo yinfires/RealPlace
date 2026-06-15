@@ -3,9 +3,7 @@ package com.yinfires.realplace.server;
 import com.yinfires.realplace.RealPlaceItemTransforms;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -75,7 +73,7 @@ public final class RealPlaceObject {
         return bounds;
     }
 
-    public CompoundTag save(HolderLookup.Provider provider) {
+    public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putUUID("Id", id);
         tag.putDouble("X", position.x);
@@ -85,14 +83,12 @@ public final class RealPlaceObject {
         tag.putFloat("Pitch", pitch);
         tag.putFloat("Scale", scale);
         tag.putInt("ModelMode", modelMode);
-        ItemStack.OPTIONAL_CODEC.encodeStart(provider.createSerializationContext(NbtOps.INSTANCE), stack)
-                .result()
-                .ifPresent(itemTag -> tag.put("Item", itemTag));
+        tag.put("Item", stack.save(new CompoundTag()));
         tag.put("Shape", shape.save());
         return tag;
     }
 
-    public static RealPlaceObject fromTag(CompoundTag tag, HolderLookup.Provider provider) {
+    public static RealPlaceObject fromTag(CompoundTag tag) {
         UUID id = tag.getUUID("Id");
         Vec3 position;
         if (tag.contains("X")) {
@@ -100,7 +96,7 @@ public final class RealPlaceObject {
         } else {
             position = BlockPos.of(tag.getLong("Pos")).getCenter();
         }
-        ItemStack stack = ItemStack.parseOptional(provider, tag.getCompound("Item"));
+        ItemStack stack = ItemStack.of(tag.getCompound("Item"));
         float yaw = tag.getFloat("Yaw");
         float pitch = tag.getFloat("Pitch");
         float scale = tag.getFloat("Scale");

@@ -10,7 +10,7 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import org.joml.Quaternionf;
 
 final class RealPlaceArmorPreviewRenderer {
@@ -62,7 +62,7 @@ final class RealPlaceArmorPreviewRenderer {
         stand.setYBodyRot(0.0F);
         stand.setYHeadRot(0.0F);
         for (EquipmentSlot slot : EquipmentSlot.values()) {
-            if (slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
+            if (slot.getType() == EquipmentSlot.Type.ARMOR) {
                 stand.setItemSlot(slot, ItemStack.EMPTY);
             }
         }
@@ -73,6 +73,6 @@ final class RealPlaceArmorPreviewRenderer {
     private static boolean isHumanoidArmorModel(ItemStack stack, int modelMode) {
         return modelMode == 2
                 && stack.getItem() instanceof ArmorItem armorItem
-                && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.HUMANOID_ARMOR;
+                && armorItem.getEquipmentSlot().getType() == EquipmentSlot.Type.ARMOR;
     }
 }

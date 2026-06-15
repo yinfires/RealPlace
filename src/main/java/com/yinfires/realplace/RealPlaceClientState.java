@@ -43,7 +43,7 @@ public final class RealPlaceClientState {
             modelMode = RealPlaceItemTransforms.clampModelMode(ItemStack.EMPTY, modelMode);
             return;
         }
-        if (!previewStack.isEmpty() && ItemStack.isSameItemSameComponents(previewStack, stack)) {
+        if (!previewStack.isEmpty() && ItemStack.isSameItemSameTags(previewStack, stack)) {
             previewStack = stack.copy();
             modelMode = RealPlaceItemTransforms.clampModelMode(previewStack, modelMode);
             return;

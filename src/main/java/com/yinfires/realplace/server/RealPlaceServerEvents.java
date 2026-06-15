@@ -4,22 +4,22 @@ import com.yinfires.realplace.network.SyncRealObjectsPayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.AABB;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.BlockEvent;
 
 public final class RealPlaceServerEvents {
     private RealPlaceServerEvents() {
     }
 
     public static void register() {
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerLoggedIn);
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerLoggedOut);
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerChangedDimension);
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onBlockPlaced);
-        NeoForge.EVENT_BUS.addListener(RealPlaceServerEvents::onFluidPlaced);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerLoggedIn);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerLoggedOut);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerChangedDimension);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onPlayerTick);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onBlockPlaced);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceServerEvents::onFluidPlaced);
     }
 
     private static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
@@ -40,8 +40,11 @@ public final class RealPlaceServerEvents {
         }
     }
 
-    private static void onPlayerTick(PlayerTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 40 == 0) {
+    private static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        if (event.player instanceof ServerPlayer player && player.tickCount % 40 == 0) {
             RealPlaceManager.sync(player);
         }
     }

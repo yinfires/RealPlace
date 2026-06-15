@@ -18,8 +18,6 @@ import snownee.jade.api.ITooltip;
 import snownee.jade.api.IWailaClientRegistration;
 import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
-import snownee.jade.api.ui.IBoxElement;
-import snownee.jade.api.ui.IElementHelper;
 
 @WailaPlugin(RealPlace.MOD_ID)
 public final class RealPlaceJadePlugin implements IWailaPlugin {
@@ -47,7 +45,7 @@ public final class RealPlaceJadePlugin implements IWailaPlugin {
         CompoundTag serverData = new CompoundTag();
         serverData.putBoolean(SERVER_DATA_MARKER, true);
         serverData.putUUID("Id", hit.object().id());
-        serverData.put("Item", hit.object().stack().saveOptional(minecraft.level.registryAccess()));
+        serverData.put("Item", hit.object().stack().save(new CompoundTag()));
         BlockPos pos = BlockPos.containing(hit.location());
         BlockHitResult blockHit = new BlockHitResult(hit.location(), hit.direction(), pos, false);
         return registration.blockAccessor()
@@ -76,16 +74,14 @@ public final class RealPlaceJadePlugin implements IWailaPlugin {
         return RealPlaceClientState.find(accessor.getServerData().getUUID("Id"));
     }
 
-    private static void rewriteTooltip(IBoxElement box, BlockAccessor accessor) {
+    private static void rewriteTooltip(ITooltip tooltip, BlockAccessor accessor) {
         RealPlaceObject object = currentObject(accessor);
         if (object == null) {
             return;
         }
-        ITooltip tooltip = box.getTooltip();
         ItemStack stack = object.stack().copy();
         tooltip.clear();
-        box.setIcon(IElementHelper.get().item(stack));
-        tooltip.add(Component.literal(stack.getHoverName().getString()).withStyle(ChatFormatting.WHITE));
+        tooltip.add(stack.getHoverName().copy().withStyle(ChatFormatting.WHITE));
         tooltip.add(Component.translatable("realplace.jade.mod_name").withStyle(ChatFormatting.BLUE, ChatFormatting.ITALIC));
     }
 }

@@ -16,6 +16,7 @@ import com.yinfires.realplace.RealPlaceClientState;
 import com.yinfires.realplace.RealPlaceItemTransforms;
 import com.yinfires.realplace.network.PickupRealObjectPayload;
 import com.yinfires.realplace.network.PlaceRealObjectPayload;
+import com.yinfires.realplace.network.RealPlaceNetworking;
 import com.yinfires.realplace.network.RealPlacePlacementModePayload;
 import com.yinfires.realplace.server.RealPlaceObject;
 import com.yinfires.realplace.server.RealPlaceShape;
@@ -26,7 +27,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -63,14 +63,14 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
-import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.gui.overlay.ForgeGui;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -90,7 +90,7 @@ public final class RealPlaceClient {
             GLFW.GLFW_KEY_X,
             "key.categories.realplace");
 
-    private static final ResourceLocation HINT_LAYER = ResourceLocation.fromNamespaceAndPath(RealPlace.MOD_ID, "placement_key_hints");
+    private static final String HINT_LAYER = "placement_key_hints";
     private static final int MAX_GLINT_MASK_CACHE_SIZE = 128;
     private static final int MAX_GLINT_MASK_PIXELS = 1024;
     private static final double FLAT_ITEM_MASK_FRONT_Z = 0.5D - 1.0D / 32.0D;
@@ -108,9 +108,9 @@ public final class RealPlaceClient {
     public static void registerModBus(IEventBus modEventBus) {
         modEventBus.addListener(RealPlaceClient::clientSetup);
         modEventBus.addListener(RealPlaceClient::registerKeys);
-        modEventBus.addListener(RealPlaceClient::registerGuiLayers);
-        NeoForge.EVENT_BUS.addListener(RealPlaceClient::onClientTick);
-        NeoForge.EVENT_BUS.addListener(RealPlaceClient::onRenderLevel);
+        modEventBus.addListener(RealPlaceClient::registerGuiOverlays);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceClient::onClientTick);
+        MinecraftForge.EVENT_BUS.addListener(RealPlaceClient::onRenderLevel);
     }
 
     private static void clientSetup(FMLClientSetupEvent event) {
@@ -128,15 +128,26 @@ public final class RealPlaceClient {
         event.register(SWITCH_MODEL);
     }
 
-    private static void registerGuiLayers(RegisterGuiLayersEvent event) {
+    private static void registerGuiOverlays(RegisterGuiOverlaysEvent event) {
         event.registerAboveAll(HINT_LAYER, RealPlaceClient::renderHints);
     }
 
-    private static void onClientTick(ClientTickEvent.Post event) {
+    private static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
             RealPlaceClientState.setPlacementMode(false);
             return;
+        }
+        while (PLACEMENT_MODE.consumeClick()) {
+            togglePlacementMode();
+        }
+        if (RealPlaceClientState.placementMode()) {
+            while (SWITCH_MODEL.consumeClick()) {
+                switchModelMode();
+            }
         }
         if (RealPlaceClientState.placementMode()) {
             ItemStack stack = minecraft.player.getMainHandItem();
@@ -165,7 +176,7 @@ public final class RealPlaceClient {
         if (active && minecraft.player != null) {
             RealPlaceClientState.setPreviewStack(minecraft.player.getMainHandItem());
         }
-        PacketDistributor.sendToServer(new RealPlacePlacementModePayload(active));
+        RealPlaceNetworking.sendToServer(new RealPlacePlacementModePayload(active));
     }
 
     public static void switchModelMode() {
@@ -200,7 +211,7 @@ public final class RealPlaceClient {
         }
         RealPlaceObject object = findLookedAtObject();
         if (object != null) {
-            PacketDistributor.sendToServer(new PickupRealObjectPayload(object.id(), hand));
+            RealPlaceNetworking.sendToServer(new PickupRealObjectPayload(object.id(), hand));
             return true;
         }
         return false;
@@ -213,7 +224,7 @@ public final class RealPlaceClient {
         }
         RealPlaceObject object = findLookedAtObject();
         if (object != null) {
-            PacketDistributor.sendToServer(new PickupRealObjectPayload(object.id(), hand));
+            RealPlaceNetworking.sendToServer(new PickupRealObjectPayload(object.id(), hand));
             return true;
         }
         return false;
@@ -252,7 +263,7 @@ public final class RealPlaceClient {
             return;
         }
         ItemStack stack = minecraft.player.getItemInHand(hand);
-        if (stack.isEmpty() || !ItemStack.isSameItemSameComponents(stack, RealPlaceClientState.previewStack())) {
+        if (stack.isEmpty() || !ItemStack.isSameItemSameTags(stack, RealPlaceClientState.previewStack())) {
             return;
         }
         int modelMode = RealPlaceItemTransforms.clampModelMode(stack, RealPlaceClientState.modelMode());
@@ -260,7 +271,7 @@ public final class RealPlaceClient {
         if (preview == null) {
             return;
         }
-        PacketDistributor.sendToServer(new PlaceRealObjectPayload(
+        RealPlaceNetworking.sendToServer(new PlaceRealObjectPayload(
                 preview.position,
                 RealPlaceClientState.yaw(),
                 RealPlaceClientState.pitch(),
@@ -331,7 +342,7 @@ public final class RealPlaceClient {
         }
         GlintMaskKey key = new GlintMaskKey(
                 BuiltInRegistries.ITEM.getKey(object.stack().getItem()),
-                object.stack().getComponentsPatch().hashCode(),
+                stackTagHash(object.stack()),
                 directRenderType,
                 System.identityHashCode(minecraft.getModelManager()));
         synchronized (GLINT_MASK_CACHE) {
@@ -340,8 +351,7 @@ public final class RealPlaceClient {
                 return cached.placeable() ? cached : null;
             }
         }
-        List<BakedModel> renderPasses = model.getRenderPasses(object.stack(), directRenderType);
-        FlatItemAlphaMask mask = createFlatItemAlphaMask(renderPasses.isEmpty() ? List.of(model) : renderPasses);
+        FlatItemAlphaMask mask = createFlatItemAlphaMask(List.of(model));
         synchronized (GLINT_MASK_CACHE) {
             GLINT_MASK_CACHE.put(key, mask);
         }
@@ -445,7 +455,8 @@ public final class RealPlaceClient {
 
     private static void writeFlatItemGlintMask(PoseStack poseStack, RealPlaceShape.Transform transform, FlatItemAlphaMask mask) {
         RenderSystem.setShader(GameRenderer::getPositionShader);
-        BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
+        BufferBuilder builder = Tesselator.getInstance().getBuilder();
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION);
         Matrix4f matrix = poseStack.last().pose();
         for (SpriteAlphaMask spriteMask : mask.sprites()) {
             for (int y = 0; y < spriteMask.height(); y++) {
@@ -470,10 +481,7 @@ public final class RealPlaceClient {
                 }
             }
         }
-        var mesh = builder.build();
-        if (mesh != null) {
-            BufferUploader.drawWithShader(mesh);
-        }
+        BufferUploader.drawWithShader(builder.end());
     }
 
     private static void addMaskRect(BufferBuilder builder, Matrix4f matrix, RealPlaceShape.Transform transform, double minX, double minY, double maxX, double maxY, double z) {
@@ -485,7 +493,7 @@ public final class RealPlaceClient {
 
     private static void addMaskVertex(BufferBuilder builder, Matrix4f matrix, RealPlaceShape.Transform transform, double x, double y, double z) {
         Vec3 transformed = transform.apply(x, y, z);
-        builder.addVertex(matrix, (float)transformed.x, (float)transformed.y, (float)transformed.z);
+        builder.vertex(matrix, (float)transformed.x, (float)transformed.y, (float)transformed.z).endVertex();
     }
 
     private static FlatItemAlphaMask createFlatItemAlphaMask(List<BakedModel> models) {
@@ -633,8 +641,8 @@ public final class RealPlaceClient {
             } else {
                 normal.normalize();
             }
-            consumer.addVertex(matrix, x1, y1, z1).setColor(red, green, blue, alpha).setNormal(poseStack.last(), normal.x(), normal.y(), normal.z());
-            consumer.addVertex(matrix, x2, y2, z2).setColor(red, green, blue, alpha).setNormal(poseStack.last(), normal.x(), normal.y(), normal.z());
+            consumer.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha).normal(poseStack.last().normal(), normal.x(), normal.y(), normal.z()).endVertex();
+            consumer.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha).normal(poseStack.last().normal(), normal.x(), normal.y(), normal.z()).endVertex();
         }
     }
 
@@ -705,7 +713,7 @@ public final class RealPlaceClient {
             return null;
         }
         Vec3 start = minecraft.player.getEyePosition();
-        double range = minecraft.player.blockInteractionRange();
+        double range = minecraft.player.getBlockReach();
         Vec3 end = start.add(minecraft.player.getViewVector(1.0F).scale(range));
         RealPlaceObject nearest = null;
         Vec3 nearestLocation = null;
@@ -759,7 +767,7 @@ public final class RealPlaceClient {
         return shape.placementPosition(hit.location, hit.direction, RealPlaceClientState.yaw(), RealPlaceClientState.pitch(), RealPlaceClientState.scale());
     }
 
-    private static void renderHints(GuiGraphics graphics, DeltaTracker deltaTracker) {
+    private static void renderHints(ForgeGui gui, GuiGraphics graphics, float partialTick, int screenWidth, int screenHeight) {
         if (!RealPlaceClientState.placementMode() || !RealPlaceClientConfig.INSTANCE.showPlacementKeyHints()) {
             return;
         }
@@ -791,6 +799,10 @@ public final class RealPlaceClient {
 
     public static RealPlaceObject lookedAtObject() {
         return findLookedAtObject();
+    }
+
+    private static int stackTagHash(ItemStack stack) {
+        return stack.getTag() == null ? 0 : stack.getTag().hashCode();
     }
 
     private record Preview(Vec3 position, RealPlaceShape shape, boolean valid) {
@@ -825,37 +837,45 @@ public final class RealPlaceClient {
 
     private static final class NoopVertexConsumer implements VertexConsumer {
         @Override
-        public VertexConsumer addVertex(float x, float y, float z) {
+        public VertexConsumer vertex(double x, double y, double z) {
             return this;
         }
 
         @Override
-        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+        public VertexConsumer color(int red, int green, int blue, int alpha) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv(float u, float v) {
+        public VertexConsumer uv(float u, float v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv1(int u, int v) {
+        public VertexConsumer overlayCoords(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setUv2(int u, int v) {
+        public VertexConsumer uv2(int u, int v) {
             return this;
         }
 
         @Override
-        public VertexConsumer setNormal(float normalX, float normalY, float normalZ) {
+        public VertexConsumer normal(float normalX, float normalY, float normalZ) {
             return this;
         }
 
         @Override
-        public void addVertex(float x, float y, float z, int color, float u, float v, int packedOverlay, int packedLight, float normalX, float normalY, float normalZ) {
+        public void defaultColor(int red, int green, int blue, int alpha) {
+        }
+
+        @Override
+        public void unsetDefaultColor() {
+        }
+
+        @Override
+        public void endVertex() {
         }
     }
 

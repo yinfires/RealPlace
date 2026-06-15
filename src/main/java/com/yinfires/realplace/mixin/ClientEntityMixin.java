@@ -8,7 +8,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -22,16 +21,13 @@ public abstract class ClientEntityMixin {
     @Shadow
     public boolean noPhysics;
 
-    @Shadow
-    public abstract AABB getBoundingBox();
-
     @Inject(method = "move", at = @At("HEAD"))
     private void realplace$forceClientPhysicsForRealPlace(MoverType type, Vec3 movement, CallbackInfo callbackInfo) {
         Entity self = (Entity)(Object)this;
         if (!noPhysics || !(self instanceof ItemEntity) || !(self.level() instanceof ClientLevel)) {
             return;
         }
-        AABB searchBox = getBoundingBox().expandTowards(movement).inflate(1.0E-4D);
+        var searchBox = self.getBoundingBox().expandTowards(movement).inflate(1.0E-4D);
         List<RealPlaceObject> objects = RealPlaceEntityCollision.filter(RealPlaceClientState.objects(), searchBox);
         if (RealPlaceEntityCollision.intersects(searchBox, objects)) {
             noPhysics = false;
@@ -45,10 +41,10 @@ public abstract class ClientEntityMixin {
             return;
         }
         Vec3 vanillaMovement = callbackInfo.getReturnValue();
-        AABB searchBox = getBoundingBox().expandTowards(vanillaMovement).inflate(1.0E-4D);
+        var searchBox = self.getBoundingBox().expandTowards(vanillaMovement).inflate(1.0E-4D);
         List<RealPlaceObject> objects = RealPlaceEntityCollision.filter(RealPlaceClientState.objects(), searchBox);
         if (!objects.isEmpty()) {
-            callbackInfo.setReturnValue(RealPlaceEntityCollision.collide(getBoundingBox(), vanillaMovement, objects));
+            callbackInfo.setReturnValue(RealPlaceEntityCollision.collide(self.getBoundingBox(), vanillaMovement, objects));
         }
     }
 }
