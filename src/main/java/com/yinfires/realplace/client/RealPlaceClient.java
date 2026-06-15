@@ -237,7 +237,7 @@ public final class RealPlaceClient {
             return false;
         }
         AABB targetBox = new AABB(context.getClickedPos()).inflate(1.0E-4D);
-        for (RealPlaceObject object : RealPlaceClientState.objects()) {
+        for (RealPlaceObject object : RealPlaceClientState.query(targetBox)) {
             if (object.bounds().intersects(targetBox)
                     && object.shape().intersectsAabb(object.position(), object.yaw(), object.pitch(), object.scale(), targetBox)) {
                 return true;
@@ -280,6 +280,9 @@ public final class RealPlaceClient {
         }
         MultiBufferSource.BufferSource bufferSource = minecraft.renderBuffers().bufferSource();
         for (RealPlaceObject object : RealPlaceClientState.objects()) {
+            if (!event.getFrustum().isVisible(object.bounds())) {
+                continue;
+            }
             renderObject(event, bufferSource, object);
         }
         renderSelection(event, bufferSource);
@@ -674,7 +677,7 @@ public final class RealPlaceClient {
             }
         }
         if (valid) {
-            for (RealPlaceObject object : RealPlaceClientState.objects()) {
+            for (RealPlaceObject object : RealPlaceClientState.query(box)) {
                 if (object.bounds().intersects(box)
                         && shape.intersectsShape(
                                 position,
@@ -711,7 +714,8 @@ public final class RealPlaceClient {
         Vec3 nearestLocation = null;
         Direction nearestDirection = Direction.UP;
         double nearestDistance = Double.MAX_VALUE;
-        for (RealPlaceObject object : RealPlaceClientState.objects()) {
+        AABB searchBox = new AABB(start, end).inflate(1.0E-4D);
+        for (RealPlaceObject object : RealPlaceClientState.query(searchBox)) {
             java.util.Optional<RealPlaceShape.ShapeHit> hit = object.shape().clipExact(object.position(), object.yaw(), object.pitch(), object.scale(), start, end);
             if (hit.isPresent()) {
                 double distance = hit.get().distance();

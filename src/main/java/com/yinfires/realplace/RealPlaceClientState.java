@@ -1,9 +1,11 @@
 package com.yinfires.realplace;
 
 import com.yinfires.realplace.server.RealPlaceObject;
+import com.yinfires.realplace.server.RealPlaceObjectIndex;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.item.ItemStack;
 
 public final class RealPlaceClientState {
@@ -14,6 +16,9 @@ public final class RealPlaceClientState {
     private static float scale = 1.0F;
     private static int modelMode;
     private static final List<RealPlaceObject> objects = new ArrayList<>();
+    private static final RealPlaceObjectIndex index = new RealPlaceObjectIndex();
+    private static List<RealPlaceObject> objectSnapshot = List.of();
+    private static long objectsVersion;
 
     private RealPlaceClientState() {
     }
@@ -85,16 +90,29 @@ public final class RealPlaceClientState {
     }
 
     public static List<RealPlaceObject> objects() {
-        return List.copyOf(objects);
+        return objectSnapshot;
     }
 
     public static void replaceObjects(List<RealPlaceObject> newObjects) {
         objects.clear();
         objects.addAll(newObjects);
+        rebuildIndex();
+        objectsVersion++;
     }
 
     public static void removeObject(UUID id) {
-        objects.removeIf(object -> object.id().equals(id));
+        if (objects.removeIf(object -> object.id().equals(id))) {
+            rebuildIndex();
+            objectsVersion++;
+        }
+    }
+
+    public static List<RealPlaceObject> query(AABB box) {
+        return index.query(box);
+    }
+
+    public static long objectsVersion() {
+        return objectsVersion;
     }
 
     public static RealPlaceObject findAt(net.minecraft.core.BlockPos pos) {
@@ -120,5 +138,13 @@ public final class RealPlaceClientState {
         pitch = 0.0F;
         scale = 1.0F;
         modelMode = 0;
+    }
+
+    private static void rebuildIndex() {
+        index.clear();
+        for (RealPlaceObject object : objects) {
+            index.add(object);
+        }
+        objectSnapshot = List.copyOf(objects);
     }
 }

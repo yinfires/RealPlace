@@ -42,7 +42,7 @@ public final class RealPlaceServerEvents {
 
     private static void onPlayerTick(PlayerTickEvent.Post event) {
         if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 40 == 0) {
-            RealPlaceManager.sync(player);
+            RealPlaceManager.syncIfChanged(player);
         }
     }
 
